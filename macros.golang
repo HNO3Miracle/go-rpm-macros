@@ -1,0 +1,34 @@
+#
+# Golang macros
+#
+
+%__go /usr/bin/go
+%go_sys_gopath /usr/share/gocode/src
+
+#
+# Common flags
+#
+%go_common \
+  export GO111MODULE=off \
+  export GOPATH=%{_builddir}/go:%{_datadir}/gocode \
+%{nil}
+
+#
+# Build flags
+#
+%go_build_flags_default -v
+
+#
+# Test flags
+#
+%go_test_flags_default -v
+# TODO: It's broken, will append annoying "--".
+%go_test_flags(-) %{expand:%{shrink:%{go_test_flags_default} %**}}
+
+#
+# BuildSystem flags
+#
+%go_prep \
+  %__mkdir -p %{_builddir}/go/src/%{go_import_path} \
+  %__cp -a . %{_builddir}/go/src/%{go_import_path} \
+%{nil}
