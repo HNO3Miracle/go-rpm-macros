@@ -3,7 +3,8 @@
 %buildsystem_golangmodules_build() %nil
 %buildsystem_golangmodules_install() %{expand:\\\
   %__install -d %{buildroot}%{go_sys_gopath}/%{go_import_path} ; \\\
-  %__cp -a . %{buildroot}%{go_sys_gopath}/%{go_import_path} \\\
+  %__cp -a . %{buildroot}%{go_sys_gopath}/%{go_import_path} ; \\\
+  %__go_generate_provides \\\
 }
 %buildsystem_golangmodules_check(-) %{expand:\\\
   %{go_common} \\\

@@ -3,7 +3,26 @@
 #
 
 %__go /usr/bin/go
-%go_sys_gopath /usr/share/gocode/src
+%gopath /usr/share/gocode
+%go_sys_gopath %{gopath}/src
+
+# Generate metadata consumed by the RPM Go file attribute generator.
+# Run against the installed source tree so large source packages provide every
+# importable library they actually ship, including packages in nested modules.
+%__go_generate_provides \
+  ( \
+    cd %{buildroot}%{go_sys_gopath}/%{go_import_path} ; \
+    export GOPATH=%{buildroot}%{gopath} GO111MODULE=off ; \
+    %__go list -e -f '{{if and (not .Error) (ne .Name "main") (or .GoFiles .CgoFiles .SFiles)}}{{.ImportPath}}{{end}}' %{go_import_path}/... | \
+      while IFS= read -r _go_package; do \
+        [ -n "$_go_package" ] || continue ; \
+        case "/$_go_package/" in \
+          */example/*|*/examples/*) continue ;; \
+        esac ; \
+        echo 'version:%{version}' > %{buildroot}%{go_sys_gopath}/"$_go_package"/.goipath ; \
+      done \
+  ) \
+%{nil}
 
 #
 # Common flags
