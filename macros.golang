@@ -6,23 +6,32 @@
 %gopath /usr/share/gocode
 %go_sys_gopath %{gopath}/src
 
-# Generate metadata consumed by the RPM Go file attribute generator.
-# Run against the installed source tree so large source packages provide every
-# importable library they actually ship, including packages in nested modules.
-%__go_generate_provides \
+# Generate metadata consumed by the RPM Go file attribute generator. This can
+# be called from a custom %install with an explicit import path and version:
+#   %go_generate_provides -i example.org/project -v %{version}
+%go_generate_provides(i:v:) %{expand:\
   ( \
-    cd %{buildroot}%{go_sys_gopath}/%{go_import_path} ; \
+    _go_import_path="%{-i*}" ; \
+    _go_version="%{-v*}" ; \
+    [ -n "$_go_import_path" ] || _go_import_path="%{go_import_path}" ; \
+    [ -n "$_go_version" ] || _go_version="%{version}" ; \
+    _go_source_root="%{buildroot}%{go_sys_gopath}" ; \
+    if [ ! -d "$_go_source_root/$_go_import_path" ]; then \
+      echo "Go import root is not installed: $_go_import_path" >&2 ; \
+      exit 1 ; \
+    fi ; \
+    cd "$_go_source_root/$_go_import_path" ; \
     export GOPATH=%{buildroot}%{gopath} GO111MODULE=off ; \
-    %__go list -e -f '{{if and (not .Error) (ne .Name "main") (or .GoFiles .CgoFiles .SFiles)}}{{.ImportPath}}{{end}}' %{go_import_path}/... | \
+    %__go list -e -f '{{if and (not .Error) (ne .Name "main") (or .GoFiles .CgoFiles .SFiles)}}{{.ImportPath}}{{end}}' "$_go_import_path/..." | \
       while IFS= read -r _go_package; do \
         [ -n "$_go_package" ] || continue ; \
         case "/$_go_package/" in \
           */example/*|*/examples/*) continue ;; \
         esac ; \
-        echo 'version:%{version}' > %{buildroot}%{go_sys_gopath}/"$_go_package"/.goipath ; \
+        echo "version:$_go_version" > "$_go_source_root/$_go_package/.goipath" ; \
       done \
   ) \
-%{nil}
+}
 
 #
 # Common flags
