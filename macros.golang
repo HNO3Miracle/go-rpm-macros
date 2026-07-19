@@ -20,16 +20,53 @@
       echo "Go import root is not installed: $_go_import_path" >&2 ; \
       exit 1 ; \
     fi ; \
-    cd "$_go_source_root/$_go_import_path" ; \
+    cd "$_go_source_root/$_go_import_path" || exit 1 ; \
     export GOPATH=%{buildroot}%{gopath} GO111MODULE=off ; \
-    %__go list -e -f '{{if and (not .Error) (ne .Name "main") (or .GoFiles .CgoFiles .SFiles)}}{{.ImportPath}}{{end}}' "$_go_import_path/..." | \
-      while IFS= read -r _go_package; do \
-        [ -n "$_go_package" ] || continue ; \
-        case "/$_go_package/" in \
-          */example/*|*/examples/*) continue ;; \
-        esac ; \
-        echo "version:$_go_version" > "$_go_source_root/$_go_package/.goipath" ; \
-      done \
+    _go_list_dir=$(mktemp -d) || exit 1 ; \
+    trap 'rm -rf "$_go_list_dir"' EXIT ; \
+    _go_list_file="$_go_list_dir/list" ; \
+    _go_package_file="$_go_list_dir/packages" ; \
+    if %__go list -e -f '{{if .Error}}error|{{.ImportPath}}{{else if eq .Name "main"}}main|{{.ImportPath}}{{else if not (or .GoFiles .CgoFiles .SFiles)}}nosource|{{.ImportPath}}{{else}}package|{{.ImportPath}}{{end}}' "$_go_import_path/..." >"$_go_list_file" ; then \
+      _go_list_rc=0 ; \
+    else \
+      _go_list_rc=$? ; \
+    fi ; \
+    _go_packages=0 ; \
+    _go_markers=0 ; \
+    _go_skipped_main=0 ; \
+    _go_skipped_nosource=0 ; \
+    _go_skipped_examples=0 ; \
+    _go_errors=0 ; \
+    while IFS='|' read -r _go_kind _go_package _go_error; do \
+      case "$_go_kind" in \
+        error) \
+          _go_errors=$((_go_errors + 1)) ; \
+          echo "go-provides: package error: $_go_package" >&2 ; \
+          ;; \
+        package) \
+          _go_packages=$((_go_packages + 1)) ; \
+          case "/$_go_package/" in \
+            */example/*|*/examples/*) \
+              _go_skipped_examples=$((_go_skipped_examples + 1)) ; \
+              ;; \
+            *) \
+              echo "$_go_package" >>"$_go_package_file" ; \
+              _go_markers=$((_go_markers + 1)) ; \
+              ;; \
+          esac ; \
+          ;; \
+        main) _go_skipped_main=$((_go_skipped_main + 1)) ;; \
+        nosource) _go_skipped_nosource=$((_go_skipped_nosource + 1)) ;; \
+      esac ; \
+    done <"$_go_list_file" ; \
+    echo "go-provides: packages=$_go_packages markers=$_go_markers skipped-main=$_go_skipped_main skipped-no-source=$_go_skipped_nosource skipped-examples=$_go_skipped_examples errors=$_go_errors" >&2 ; \
+    if [ "$_go_list_rc" -ne 0 ] || [ "$_go_errors" -ne 0 ]; then \
+      echo "go-provides: refusing to generate incomplete Provides for $_go_import_path (go-list-rc=$_go_list_rc)" >&2 ; \
+      exit 1 ; \
+    fi ; \
+    while IFS= read -r _go_package; do \
+      printf 'version:%s\n' "$_go_version" > "$_go_source_root/$_go_package/.goipath" || exit 1 ; \
+    done <"$_go_package_file" ; \
   ) \
 }
 
