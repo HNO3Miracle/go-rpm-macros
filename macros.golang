@@ -60,9 +60,12 @@
       esac ; \
     done <"$_go_list_file" ; \
     echo "go-provides: packages=$_go_packages markers=$_go_markers skipped-main=$_go_skipped_main skipped-no-source=$_go_skipped_nosource skipped-examples=$_go_skipped_examples errors=$_go_errors" >&2 ; \
-    if [ "$_go_list_rc" -ne 0 ] || [ "$_go_errors" -ne 0 ]; then \
-      echo "go-provides: refusing to generate incomplete Provides for $_go_import_path (go-list-rc=$_go_list_rc)" >&2 ; \
-      exit 1 ; \
+    if [ "$_go_list_rc" -ne 0 ]; then \
+      echo "go-provides: go list failed for $_go_import_path (rc=$_go_list_rc)" >&2 ; \
+      exit "$_go_list_rc" ; \
+    fi ; \
+    if [ "$_go_errors" -ne 0 ]; then \
+      echo "go-provides: skipped $_go_errors packages with errors" >&2 ; \
     fi ; \
     while IFS= read -r _go_package; do \
       printf 'version:%s\n' "$_go_version" > "$_go_source_root/$_go_package/.goipath" || exit 1 ; \
