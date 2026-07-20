@@ -26,6 +26,7 @@
     trap 'rm -rf "$_go_list_dir"' EXIT ; \
     _go_list_file="$_go_list_dir/list" ; \
     _go_package_file="$_go_list_dir/packages" ; \
+    : >"$_go_package_file" ; \
     if %__go list -e -f '{{if .Error}}error|{{.ImportPath}}{{else if eq .Name "main"}}main|{{.ImportPath}}{{else if not (or .GoFiles .CgoFiles .SFiles)}}nosource|{{.ImportPath}}{{else}}package|{{.ImportPath}}{{end}}' "$_go_import_path/..." >"$_go_list_file" ; then \
       _go_list_rc=0 ; \
     else \
