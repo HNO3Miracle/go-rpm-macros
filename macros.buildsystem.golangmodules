@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: (C) 2026 Institute of Software, Chinese Academy of Sciences (ISCAS)
+# SPDX-FileCopyrightText: (C) 2026 openRuyi Project Contributors
+#
+# SPDX-License-Identifier: MIT
+
 # Example buildsystem for go modules
 %buildsystem_golangmodules_conf() %nil
 %buildsystem_golangmodules_build() %nil

@@ -1,4 +1,8 @@
-# Example buildsystem for go
+# SPDX-FileCopyrightText: (C) 2026 Institute of Software, Chinese Academy of Sciences (ISCAS)
+# SPDX-FileCopyrightText: (C) 2026 openRuyi Project Contributors
+#
+# SPDX-License-Identifier: MIT
+
 %buildsystem_golang_conf() %nil
 %buildsystem_golang_prep() %{expand:\\\
   %autosetup -C -p1 %* ; \\\

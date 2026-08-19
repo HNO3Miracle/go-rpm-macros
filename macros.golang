@@ -1,4 +1,8 @@
+# SPDX-FileCopyrightText: (C) 2026 Institute of Software, Chinese Academy of Sciences (ISCAS)
+# SPDX-FileCopyrightText: (C) 2026 openRuyi Project Contributors
 #
+# SPDX-License-Identifier: MIT
+
 # Golang macros
 #
 
@@ -46,7 +50,15 @@
           ;; \
         package) \
           _go_packages=$((_go_packages + 1)) ; \
-          case "/$_go_package/" in \
+          if [ "$_go_package" = "$_go_import_path" ]; then \
+            _go_relative_package="" ; \
+          elif [ "${_go_package#"$_go_import_path"/}" != "$_go_package" ]; then \
+            _go_relative_package=${_go_package#"$_go_import_path"/} ; \
+          else \
+            echo "go-provides: package outside import root: $_go_package" >&2 ; \
+            continue ; \
+          fi ; \
+          case "/$_go_relative_package/" in \
             */example/*|*/examples/*) \
               _go_skipped_examples=$((_go_skipped_examples + 1)) ; \
               ;; \
