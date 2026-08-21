@@ -31,7 +31,7 @@
     _go_list_file="$_go_list_dir/list" ; \
     _go_package_file="$_go_list_dir/packages" ; \
     : >"$_go_package_file" ; \
-    if %__go list -e -f '{{if .Error}}error|{{.ImportPath}}{{else if eq .Name "main"}}main|{{.ImportPath}}{{else if not (or .GoFiles .CgoFiles .SFiles)}}nosource|{{.ImportPath}}{{else}}package|{{.ImportPath}}{{end}}' "$_go_import_path/..." >"$_go_list_file" ; then \
+    if %__go list -e -f '{{if .Error}}error|{{.ImportPath}}|{{printf "%q" .Error.Err}}{{else if eq .Name "main"}}main|{{.ImportPath}}{{else if not (or .GoFiles .CgoFiles .SFiles)}}nosource|{{.ImportPath}}{{else}}package|{{.ImportPath}}{{end}}' "$_go_import_path/..." >"$_go_list_file" ; then \
       _go_list_rc=0 ; \
     else \
       _go_list_rc=$? ; \
@@ -46,7 +46,7 @@
       case "$_go_kind" in \
         error) \
           _go_errors=$((_go_errors + 1)) ; \
-          echo "go-provides: package error: $_go_package" >&2 ; \
+          echo "go-provides: package error: $_go_package: $_go_error" >&2 ; \
           ;; \
         package) \
           _go_packages=$((_go_packages + 1)) ; \
