@@ -1,0 +1,11 @@
+# Copyright (C) 2015-2019 Jan Chaloupka <jchaloup@redhat.com>
+# Copyright (C) 2018-2019 Nicolas Mailhot <nim@fedoraproject.org>
+# SPDX-FileCopyrightText: (C) 2026 Institute of Software, Chinese Academy of Sciences (ISCAS)
+# SPDX-FileCopyrightText: (C) 2026 openRuyi Project Contributors
+# SPDX-FileContributor: HNO3Miracle <xiangao.or@isrc.iscas.ac.cn>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+%__go_path              ^%{gopath}/src/.+/.goipath$
+%__go_flags             path
+%__go_provides          %{_rpmconfigdir}/go-rpm-integration provides --prefix "%{buildroot}" --go-path "%{gopath}"

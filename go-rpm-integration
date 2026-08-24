@@ -1,0 +1,87 @@
+#!/usr/bin/bash
+# Copyright © 2018-2019 Nicolas Mailhot <nim@fedoraproject.org>
+# Copyright © 2018-2019 Jan Chaloupka <jchaloup@redhat.com>
+# SPDX-FileCopyrightText: (C) 2026 Institute of Software, Chinese Academy of Sciences (ISCAS)
+# SPDX-FileCopyrightText: (C) 2026 openRuyi Project Contributors
+# SPDX-FileContributor: HNO3Miracle <xiangao.or@isrc.iscas.ac.cn>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+set -euo pipefail
+
+usage() {
+    cat >&2 <<EOF
+Usage: $0 provides [--prefix PATH] [--go-path PATH]
+
+Read .goipath files from standard input and emit one versioned go(...)
+RPM Provide for each marker.
+EOF
+    exit 1
+}
+
+[[ $# -gt 0 && $1 == provides ]] || usage
+shift
+
+prefix=""
+gopath="/usr/share/gocode"
+
+options=$(getopt -n "$0" -o hp:g: -l help,prefix:,go-path: -- "$@") || usage
+eval set -- "$options"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            usage
+            ;;
+        -p|--prefix)
+            prefix=$(realpath -sm "$2")
+            shift 2
+            ;;
+        -g|--go-path)
+            gopath=$2
+            shift 2
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            usage
+            ;;
+    esac
+done
+
+[[ $# -eq 0 ]] || usage
+
+source_root="${prefix}${gopath}/src"
+
+while IFS= read -r input_path; do
+    [[ -n $input_path ]] || continue
+
+    if [[ $input_path == "$prefix"/* ]]; then
+        metadata_file=$input_path
+    else
+        metadata_file="${prefix}${input_path}"
+    fi
+
+    case $metadata_file in
+        "$source_root"/*/.goipath) ;;
+        *)
+            echo "Ignoring .goipath outside $source_root: $metadata_file" >&2
+            continue
+            ;;
+    esac
+
+    import_path=${metadata_file#"$source_root"/}
+    import_path=${import_path%/.goipath}
+    version=""
+    while IFS=: read -r key value; do
+        [[ $key == version ]] && version=$value
+    done < "$metadata_file"
+
+    if [[ -n $version ]]; then
+        printf 'go(%s) = %s\n' "$import_path" "$version"
+    else
+        printf 'go(%s)\n' "$import_path"
+    fi
+done
