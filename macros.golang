@@ -10,8 +10,13 @@
 %gopath /usr/share/gocode
 %go_sys_gopath %{gopath}/src
 
-# Generate metadata consumed by the RPM Go file attribute generator. This can
-# be called from a custom %install with an explicit import path and version:
+# Generate metadata consumed by the RPM Go file attribute generator. With
+# go_submodules set, its entries override %{version} for matching import paths.
+# Each entry contains one import path and one version, separated by whitespace.
+#   %global go_submodules %{expand:
+#   example.org/project/submodule 2.0.0
+#   }
+# This can be called from a custom %install with an explicit import path and version:
 #   %go_generate_provides -i example.org/project -v %{version}
 %go_generate_provides(i:v:) %{expand:\
   ( \
@@ -20,6 +25,7 @@
     [ -n "$_go_import_path" ] || _go_import_path="%{go_import_path}" ; \
     [ -n "$_go_version" ] || _go_version="%{version}" ; \
     _go_source_root="%{buildroot}%{go_sys_gopath}" ; \
+    _go_submodules='%{?go_submodules}' ; \
     if [ ! -d "$_go_source_root/$_go_import_path" ]; then \
       echo "Go import root is not installed: $_go_import_path" >&2 ; \
       exit 1 ; \
@@ -50,6 +56,25 @@
           ;; \
         package) \
           _go_packages=$((_go_packages + 1)) ; \
+          _go_package_version="$_go_version" ; \
+          _go_longest_submodule=0 ; \
+          while IFS=' ' read -r _go_submodule _go_submodule_version _go_submodule_extra; do \
+            case "$_go_submodule" in \
+              ""|"#"*) continue ;; \
+            esac ; \
+            if [ -z "$_go_submodule_version" ] || [ -n "$_go_submodule_extra" ]; then \
+              echo "go-provides: invalid go_submodules entry: $_go_submodule $_go_submodule_version $_go_submodule_extra" >&2 ; \
+              exit 1 ; \
+            fi ; \
+            case "$_go_package" in \
+              "$_go_submodule"|"$_go_submodule"/*) \
+                if [ "${#_go_submodule}" -gt "$_go_longest_submodule" ]; then \
+                  _go_package_version="$_go_submodule_version" ; \
+                  _go_longest_submodule=${#_go_submodule} ; \
+                fi ; \
+                ;; \
+            esac ; \
+          done <<< "$_go_submodules" ; \
           if [ "$_go_package" = "$_go_import_path" ]; then \
             _go_relative_package="" ; \
           elif [ "${_go_package#"$_go_import_path"/}" != "$_go_package" ]; then \
@@ -63,7 +88,7 @@
               _go_skipped_examples=$((_go_skipped_examples + 1)) ; \
               ;; \
             *) \
-              echo "$_go_package" >>"$_go_package_file" ; \
+              printf '%s\\t%s\\n' "$_go_package" "$_go_package_version" >>"$_go_package_file" ; \
               _go_markers=$((_go_markers + 1)) ; \
               ;; \
           esac ; \
@@ -80,8 +105,8 @@
     if [ "$_go_errors" -ne 0 ]; then \
       echo "go-provides: skipped $_go_errors packages with errors" >&2 ; \
     fi ; \
-    while IFS= read -r _go_package; do \
-      printf 'version:%s\n' "$_go_version" > "$_go_source_root/$_go_package/.goipath" || exit 1 ; \
+    while IFS=$'\\t' read -r _go_package _go_package_version; do \
+      printf 'version:%s\\n' "$_go_package_version" > "$_go_source_root/$_go_package/.goipath" || exit 1 ; \
     done <"$_go_package_file" ; \
   ) \
 }
