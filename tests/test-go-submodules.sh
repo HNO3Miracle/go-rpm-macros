@@ -51,23 +51,26 @@ declare -a rpm_args
 prepare_case() {
     local name=$1
     local table=$2
-    local entry entry_name
+    local entry entry_name macrofiles
 
     case_dir="$work/$name"
-    mkdir -p "$case_dir"/{home,tmp,gocache,modcache,rpmconfig,fileattrs}
+    mkdir -p "$case_dir"/{home,tmp,gocache,modcache,rpmconfig/macros.d,rpmconfig/fileattrs}
     for entry in "$system_rpmconfig"/*; do
         entry_name=${entry##*/}
-        [[ $entry_name == go-rpm-integration ]] && continue
+        case $entry_name in
+            go-rpm-integration|macros.d|fileattrs) continue ;;
+        esac
         ln -s "$entry" "$case_dir/rpmconfig/$entry_name"
     done
     for entry in "$system_fileattrs"/*.attr; do
         [[ -e $entry ]] || continue
         entry_name=${entry##*/}
         [[ $entry_name == go.attr ]] && continue
-        ln -s "$entry" "$case_dir/fileattrs/$entry_name"
+        ln -s "$entry" "$case_dir/rpmconfig/fileattrs/$entry_name"
     done
     install -m 0755 "$repository/go-rpm-integration" "$case_dir/rpmconfig/go-rpm-integration"
-    install -m 0644 "$repository/go.attr" "$case_dir/fileattrs/go.attr"
+    install -m 0644 "$repository/go.attr" "$case_dir/rpmconfig/fileattrs/go.attr"
+    install -m 0644 "$repository"/macros.* "$case_dir/rpmconfig/macros.d/"
     mkdir -p "$case_dir/rpmbuild"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
     spec="$case_dir/test.spec"
 
@@ -97,23 +100,23 @@ cd "%{fixture_root}"
 SPEC
     } >"$spec"
 
+    # RPM 6 reloads configuration when BuildArch requests a noarch reparse.
+    # --load is transient; use a persistent macro path containing only the
+    # base RPM configuration and our staged macros/attributes, never host Go macros.
+    macrofiles="$case_dir/rpmconfig/macros:$case_dir/rpmconfig/platform/%{_target}/macros"
+    macrofiles+=":$case_dir/rpmconfig/macros.d/macros.*:$case_dir/rpmconfig/fileattrs/*.attr"
     rpm_args=(
-        --load "$repository/macros.golang"
-        --load "$repository/macros.buildsystem.golangmodules"
-        --undefine "__go_path"
-        --undefine "__go_flags"
-        --undefine "__go_provides"
-        --define "_fileattrsdir $case_dir/fileattrs"
+        --macros "$macrofiles"
+        --define "_fileattrsdir $case_dir/rpmconfig/fileattrs"
         --define "_rpmconfigdir $case_dir/rpmconfig"
-        --load "$repository/go.attr"
         --define "_topdir $case_dir/rpmbuild"
-        --define "buildroot $case_dir/buildroot"
         --define "fixture_root $fixture"
         --define "__spec_install_post %{nil}"
     )
 }
 
 run_build() {
+    # RPM 6 replaces a buildroot macro definition; --buildroot is the override.
     env -i \
         PATH=/usr/bin:/bin \
         HOME="$case_dir/home" \
@@ -126,7 +129,7 @@ run_build() {
         GOSUMDB=off \
         GOCACHE="$case_dir/gocache" \
         GOMODCACHE="$case_dir/modcache" \
-        rpmbuild -bb --nodeps --noclean "${rpm_args[@]}" "$spec" \
+        rpmbuild -bb --nodeps --noclean --buildroot "$case_dir/buildroot" "${rpm_args[@]}" "$spec" \
         >"$case_dir/rpmbuild.stdout" 2>"$case_dir/rpmbuild.stderr"
 }
 
