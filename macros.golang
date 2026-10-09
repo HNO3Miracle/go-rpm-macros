@@ -10,8 +10,14 @@
 %gopath /usr/share/gocode
 %go_sys_gopath %{gopath}/src
 
-# Generate metadata consumed by the RPM Go file attribute generator. This can
-# be called from a custom %install with an explicit import path and version:
+# Generate metadata consumed by the RPM Go file attribute generator. With
+# go_submodules set, its entries override %{version} for matching import paths.
+# Each non-empty, non-comment line contains one import path and one version,
+# separated by spaces or tabs. The longest matching import path wins.
+#   %global go_submodules %{expand:
+#   example.org/project/submodule 2.0.0
+#   }
+# This can be called from a custom %install with an explicit import path and version:
 #   %go_generate_provides -i example.org/project -v %{version}
 %go_generate_provides(i:v:) %{expand:\
   ( \
@@ -20,6 +26,9 @@
     [ -n "$_go_import_path" ] || _go_import_path="%{go_import_path}" ; \
     [ -n "$_go_version" ] || _go_version="%{version}" ; \
     _go_source_root="%{buildroot}%{go_sys_gopath}" ; \
+    _go_submodules=%{shescape:%{?go_submodules}} ; \
+    LC_ALL=C ; \
+    export LC_ALL ; \
     if [ ! -d "$_go_source_root/$_go_import_path" ]; then \
       echo "Go import root is not installed: $_go_import_path" >&2 ; \
       exit 1 ; \
@@ -27,10 +36,48 @@
     cd "$_go_source_root/$_go_import_path" || exit 1 ; \
     export GOPATH=%{buildroot}%{gopath} GO111MODULE=off ; \
     _go_list_dir=$(mktemp -d) || exit 1 ; \
-    trap 'rm -rf "$_go_list_dir"' EXIT ; \
+    trap 'rm -rf "$_go_list_dir"' 0 ; \
     _go_list_file="$_go_list_dir/list" ; \
     _go_package_file="$_go_list_dir/packages" ; \
+    _go_version_file="$_go_list_dir/package-versions" ; \
+    _go_submodule_file="$_go_list_dir/submodules" ; \
+    _go_tab=$(printf '\\t') ; \
     : >"$_go_package_file" ; \
+    : >"$_go_submodule_file" ; \
+    printf '%s\\n' "$_go_submodules" | \
+      while IFS=" $_go_tab" read -r _go_submodule _go_submodule_version _go_submodule_extra; do \
+        case "$_go_submodule" in \
+          ""|"#"*) continue ;; \
+        esac ; \
+        if [ -z "$_go_submodule_version" ] || [ -n "$_go_submodule_extra" ]; then \
+          echo "go-provides: invalid go_submodules entry: $_go_submodule $_go_submodule_version $_go_submodule_extra" >&2 ; \
+          exit 1 ; \
+        fi ; \
+        case "$_go_submodule" in \
+          *[!A-Za-z0-9._~+/-]*|/*|*/|*//*|.|..|./*|../*|*/./*|*/../*|*/.|*/..) \
+            echo "go-provides: invalid go_submodules path: $_go_submodule" >&2 ; \
+            exit 1 ; \
+            ;; \
+        esac ; \
+        case "$_go_submodule_version" in \
+          *[!A-Za-z0-9._+~^]*) \
+            echo "go-provides: invalid go_submodules version: $_go_submodule_version" >&2 ; \
+            exit 1 ; \
+            ;; \
+          *[A-Za-z0-9]*) ;; \
+          *) \
+            echo "go-provides: invalid go_submodules version: $_go_submodule_version" >&2 ; \
+            exit 1 ; \
+            ;; \
+        esac ; \
+        while IFS="$_go_tab" read -r _go_existing_submodule _go_existing_version; do \
+          if [ "$_go_existing_submodule" = "$_go_submodule" ]; then \
+            echo "go-provides: duplicate go_submodules entry: $_go_submodule" >&2 ; \
+            exit 1 ; \
+          fi ; \
+        done <"$_go_submodule_file" ; \
+        printf '%s\\t%s\\n' "$_go_submodule" "$_go_submodule_version" >>"$_go_submodule_file" || exit 1 ; \
+      done || exit 1 ; \
     if %__go list -e -f '{{if .Error}}error|{{.ImportPath}}|{{printf "%q" .Error.Err}}{{else if eq .Name "main"}}main|{{.ImportPath}}{{else if not (or .GoFiles .CgoFiles .SFiles)}}nosource|{{.ImportPath}}{{else}}package|{{.ImportPath}}{{end}}' "$_go_import_path/..." >"$_go_list_file" ; then \
       _go_list_rc=0 ; \
     else \
@@ -80,9 +127,32 @@
     if [ "$_go_errors" -ne 0 ]; then \
       echo "go-provides: skipped $_go_errors packages with errors" >&2 ; \
     fi ; \
-    while IFS= read -r _go_package; do \
-      printf 'version:%s\n' "$_go_version" > "$_go_source_root/$_go_package/.goipath" || exit 1 ; \
-    done <"$_go_package_file" ; \
+    %__awk -F "$_go_tab" -v top_version="$_go_version" -v separator="$_go_tab" ' \
+      FILENAME == ARGV[1] { versions[$1] = $2; next } \
+      { \
+        candidate = $0 ; \
+        selected = top_version ; \
+        while (candidate != "") { \
+          if (candidate in versions) { \
+            selected = versions[candidate] ; \
+            break ; \
+          } \
+          slash = 0 ; \
+          for (i = length(candidate); i > 0; i--) { \
+            if (substr(candidate, i, 1) == "/") { \
+              slash = i ; \
+              break ; \
+            } \
+          } \
+          if (slash == 0) break ; \
+          candidate = substr(candidate, 1, slash - 1) ; \
+        } \
+        print $0 separator selected ; \
+      } \
+    ' "$_go_submodule_file" "$_go_package_file" >"$_go_version_file" || exit 1 ; \
+    while IFS="$_go_tab" read -r _go_package _go_package_version; do \
+      printf 'version:%s\\n' "$_go_package_version" >"$_go_source_root/$_go_package/.goipath" || exit 1 ; \
+    done <"$_go_version_file" ; \
   ) \
 }
 
