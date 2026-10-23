@@ -22,11 +22,17 @@
 # by spaces or tabs. Only whole-line comments are supported. Duplicate paths
 # are rejected even when their versions agree, so table order is irrelevant.
 # A key matches itself and slash-delimited descendants: sub does not match
-# submarine. The longest match wins; unmatched packages use -v or %{version}.
-# Valid entries without an installed package on this architecture are allowed.
+# submarine. The longest match wins; non-nested packages without an override
+# use -v or %{version}. Valid entries without an installed package on this
+# architecture are allowed.
 # The table is the only source of overrides: finding a nested go.mod does not
-# supply that module's own version. For the table below, submodule/child gets
-# 2.0.0, submodule/nested/leaf gets 3.0.0, and submodule-extra uses the default.
+# supply that module's own version. If go_submodules is defined, each nested
+# module that contains an eligible library package needs an exact table entry;
+# a parent entry cannot provide its version. Without the table, unmatched
+# packages retain the legacy -v or %{version} fallback. The macro validates
+# missing mappings; go2spec is responsible for selecting modules and versions.
+# For the table below, submodule/child gets 2.0.0, submodule/nested/leaf gets
+# 3.0.0, and submodule-extra uses the default only if no nested go.mod owns it.
 #   %global go_submodules %{expand:
 #   example.org/project/submodule 2.0.0
 #   example.org/project/submodule/nested 3.0.0
@@ -70,9 +76,12 @@
     _go_package_file="$_go_list_dir/packages" ; \
     _go_version_file="$_go_list_dir/package-versions" ; \
     _go_submodule_file="$_go_list_dir/submodules" ; \
+    _go_nested_module_file="$_go_list_dir/nested-modules" ; \
+    _go_submodules_defined="%{?go_submodules:1}" ; \
     _go_tab=$(printf '\\t') ; \
     : >"$_go_package_file" ; \
     : >"$_go_submodule_file" ; \
+    : >"$_go_nested_module_file" ; \
     # Reject the entire table before writing any markers, even for unused keys. \
     # read assigns all remaining fields to extra, so inline comments are errors. \
     # The loop runs in a pipeline subshell; its failure must also exit the caller. \
@@ -164,6 +173,44 @@
         nosource) _go_skipped_nosource=$((_go_skipped_nosource + 1)) ;; \
       esac ; \
     done <"$_go_list_file" ; \
+    if [ "$_go_list_rc" -eq 0 ]; then \
+      if ! find . -type f -name go.mod -print >"$_go_list_dir/go-mod-files"; then \
+        echo "go-provides: failed to find nested go.mod files under $_go_import_path" >&2 ; \
+        exit 1 ; \
+      fi ; \
+      while IFS= read -r _go_mod_file; do \
+        [ "$_go_mod_file" = ./go.mod ] && continue ; \
+        _go_mod_dir=${_go_mod_file#./} ; \
+        _go_mod_dir=${_go_mod_dir%/go.mod} ; \
+        printf '%s/%s\\n' "$_go_import_path" "$_go_mod_dir" >>"$_go_nested_module_file" || exit 1 ; \
+      done <"$_go_list_dir/go-mod-files" ; \
+      if [ "$_go_submodules_defined" = 1 ]; then \
+        while IFS= read -r _go_package; do \
+          _go_owner_module= ; \
+          while IFS= read -r _go_nested_module; do \
+            case "$_go_package" in \
+              "$_go_nested_module"|"$_go_nested_module"/*) \
+                if [ "${#_go_nested_module}" -gt "${#_go_owner_module}" ]; then \
+                  _go_owner_module=$_go_nested_module ; \
+                fi ; \
+                ;; \
+            esac ; \
+          done <"$_go_nested_module_file" ; \
+          [ -n "$_go_owner_module" ] || continue ; \
+          _go_exact_mapping=0 ; \
+          while IFS="$_go_tab" read -r _go_table_path _go_table_version; do \
+            if [ "$_go_table_path" = "$_go_owner_module" ]; then \
+              _go_exact_mapping=1 ; \
+              break ; \
+            fi ; \
+          done <"$_go_submodule_file" ; \
+          if [ "$_go_exact_mapping" -eq 0 ]; then \
+            echo "go-provides: unmapped nested module: $_go_owner_module (add an exact go_submodules entry)" >&2 ; \
+            exit 1 ; \
+          fi ; \
+        done <"$_go_package_file" ; \
+      fi ; \
+    fi ; \
     echo "go-provides: packages=$_go_packages markers=$_go_markers skipped-main=$_go_skipped_main skipped-no-source=$_go_skipped_nosource skipped-examples=$_go_skipped_examples errors=$_go_errors" >&2 ; \
     if [ "$_go_list_rc" -ne 0 ]; then \
       echo "go-provides: go list failed for $_go_import_path (rc=$_go_list_rc)" >&2 ; \

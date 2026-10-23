@@ -54,6 +54,7 @@ declare -a rpm_args
 prepare_case() {
     local name=$1
     local table=$2
+    local define_table=${3:-0}
     local entry entry_name macrofiles
 
     # Retain the host RPM platform and non-Go file attributes: an empty RPM
@@ -83,7 +84,7 @@ prepare_case() {
     spec="$case_dir/test.spec"
 
     {
-        if [[ -n $table ]]; then
+        if [[ -n $table || $define_table -eq 1 ]]; then
             printf '%%global go_submodules %%{expand:\n%s\n}\n\n' "$table"
         fi
         cat <<'SPEC'
@@ -221,8 +222,9 @@ run_failure_case() {
     local name=$1
     local table=$2
     local diagnostic=$3
+    local define_table=${4:-0}
 
-    prepare_case "$name" "$table"
+    prepare_case "$name" "$table" "$define_table"
     if run_build; then
         fail "$name should fail"
     fi
@@ -283,8 +285,22 @@ run_failure_case invalid-version \
     'example.test/project/sub 2.3.4-5' \
     'go-provides: invalid go_submodules version: 2.3.4-5'
 
-# An absent table becomes an empty first awk input, not a synthetic root entry.
-# All eligible packages must still be discovered and use the default version.
+# A defined table is an explicit version contract. A parent row must not hide
+# an independently versioned nested module, and an empty contract is not a
+# request to use the parent fallback.
+run_failure_case unmapped-nested \
+    'example.test/project/sub 2.3.4' \
+    'go-provides: unmapped nested module: example.test/project/sub/nested'
+run_failure_case unmapped-parent \
+    'example.test/project/sub/nested 3.4.5' \
+    'go-provides: unmapped nested module: example.test/project/sub'
+run_failure_case empty-defined-table \
+    '' \
+    'go-provides: unmapped nested module: example.test/project/sub' \
+    1
+
+# An undefined table retains the legacy top-level fallback for compatibility.
+# This is intentionally distinct from the defined-but-empty contract above.
 prepare_case no-table ''
 run_build || {
     cat "$case_dir/rpmbuild.stderr" >&2
