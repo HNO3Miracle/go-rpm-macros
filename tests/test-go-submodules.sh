@@ -28,6 +28,8 @@ write_source() {
 
 # Nested go.mod files must not hide installed packages from GOPATH discovery.
 # child/leaf exercise inherited versions; submarine detects raw-prefix matching.
+# A nested module intentionally has no package at its root: its child package
+# must inherit the module version without creating a root capability.
 # Commands, examples and test-only directories are negative marker controls.
 fixture="$work/fixture"
 mkdir -p "$fixture"
@@ -39,7 +41,6 @@ printf 'module example.test/project/sub\n\ngo 1.18\n' >"$fixture/sub/go.mod"
 write_source "$fixture/sub/sub.go" sub
 write_source "$fixture/sub/child/child.go" child
 printf 'module example.test/project/sub/nested\n\ngo 1.18\n' >"$fixture/sub/nested/go.mod"
-write_source "$fixture/sub/nested/nested.go" nested
 write_source "$fixture/sub/nested/leaf/leaf.go" leaf
 write_source "$fixture/submarine/submarine.go" submarine
 mkdir -p "$fixture/cmd/tool" "$fixture/onlytest"
@@ -156,7 +157,6 @@ assert_outputs() {
 plain/.goipath
 sub/.goipath
 sub/child/.goipath
-sub/nested/.goipath
 sub/nested/leaf/.goipath
 submarine/.goipath
 EOF
@@ -170,7 +170,6 @@ EOF
 plain/.goipath 1.2.3
 sub/.goipath 2.3.4
 sub/child/.goipath 2.3.4
-sub/nested/.goipath 3.4.5
 sub/nested/leaf/.goipath 3.4.5
 submarine/.goipath 1.2.3
 EOF
@@ -187,7 +186,6 @@ go(example.test/project) = 1.2.3
 go(example.test/project/plain) = 1.2.3
 go(example.test/project/sub) = 2.3.4
 go(example.test/project/sub/child) = 2.3.4
-go(example.test/project/sub/nested) = 3.4.5
 go(example.test/project/sub/nested/leaf) = 3.4.5
 go(example.test/project/submarine) = 1.2.3
 EOF
@@ -199,7 +197,7 @@ EOF
     cmp "$case_dir/provides.expected" "$case_dir/rpm-provides.actual" || fail "RPM file attributes generated unexpected Provides"
 
     grep -Fxq \
-        'go-provides: packages=8 markers=7 skipped-main=1 skipped-no-source=1 skipped-examples=1 errors=0' \
+        'go-provides: packages=7 markers=6 skipped-main=1 skipped-no-source=1 skipped-examples=1 errors=0' \
         "$case_dir/rpmbuild.stderr" || fail "missing package summary"
 }
 
@@ -308,7 +306,7 @@ run_build || {
 }
 root="$case_dir/buildroot/usr/share/gocode/src/example.test/project"
 mapfile -t no_table_markers < <(find "$root" -type f -name .goipath -print | LC_ALL=C sort)
-[[ ${#no_table_markers[@]} -eq 7 ]] || fail "empty table generated the wrong marker count"
+[[ ${#no_table_markers[@]} -eq 6 ]] || fail "empty table generated the wrong marker count"
 for marker in "${no_table_markers[@]}"; do
     printf 'version:1.2.3\n' >"$case_dir/marker.expected"
     cmp "$case_dir/marker.expected" "$marker" || fail "empty table changed a marker version"
